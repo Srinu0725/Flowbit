@@ -344,14 +344,170 @@ The application is architected to scale efficiently with large datasets:
 - **Memory**: 4GB+ RAM recommended for development
 - **Storage**: ~500MB for dependencies
 
-## API Dependencies
+## API Documentation
 
-- **NRW WMS Service**: `https://www.wms.nrw.de/geobasis/wms_nw_dop`
-  - Provides satellite imagery for North Rhine-Westphalia region
-  - No authentication required
-  - CORS-enabled for browser requests
+### External APIs
 
-- **Nominatim Geocoding**: `https://nominatim.openstreetmap.org`
-  - OpenStreetMap-based geocoding service
-  - Rate limited (1 request/second)
-  - No API key required
+#### NRW WMS Service
+**Base URL**: `https://www.wms.nrw.de/geobasis/wms_nw_dop`
+
+**Purpose**: Provides satellite imagery for North Rhine-Westphalia region
+
+**Parameters**:
+```
+LAYERS: nw_dop_rgb
+VERSION: 1.3.0
+FORMAT: image/png
+SRS: EPSG:3857
+BBOX: {minX},{minY},{maxX},{maxY}
+WIDTH: {width}
+HEIGHT: {height}
+```
+
+**Example Request**:
+```
+https://www.wms.nrw.de/geobasis/wms_nw_dop?SERVICE=WMS&REQUEST=GetMap&LAYERS=nw_dop_rgb&VERSION=1.3.0&FORMAT=image/png&SRS=EPSG:3857&BBOX=778394,6573798,1112341,6907745&WIDTH=256&HEIGHT=256
+```
+
+**Response**: Binary image data (PNG/JPEG)
+**Authentication**: None required
+**Rate Limits**: None specified
+**CORS**: Enabled for browser requests
+
+#### Nominatim Geocoding API
+**Base URL**: `https://nominatim.openstreetmap.org`
+
+**Purpose**: Location search and reverse geocoding
+
+##### Search Endpoint
+**Route**: `GET /search`
+
+**Parameters**:
+- `q` (string): Search query
+- `format` (string): Response format (json)
+- `limit` (number): Maximum results (default: 1)
+- `polygon_geojson` (number): Include polygon geometry (1/0)
+- `addressdetails` (number): Include address breakdown (1/0)
+
+**Example Request**:
+```
+GET https://nominatim.openstreetmap.org/search?format=json&limit=1&polygon_geojson=1&addressdetails=1&q=Düsseldorf
+```
+
+**Example Response**:
+```json
+[
+  {
+    "place_id": 282374116,
+    "osm_type": "relation",
+    "osm_id": 62478,
+    "boundingbox": ["51.1244724", "51.3566904", "6.6947555", "6.9462585"],
+    "lat": "51.2254018",
+    "lon": "6.7763137",
+    "display_name": "Düsseldorf, North Rhine-Westphalia, Germany",
+    "geojson": {
+      "type": "Polygon",
+      "coordinates": [[[6.7763137, 51.2254018]]]
+    }
+  }
+]
+```
+
+**Authentication**: None required
+**Rate Limits**: 1 request per second
+**CORS**: Enabled
+
+### Internal Service APIs
+
+#### GeocodingService
+**File**: `src/services/geocoding.ts`
+
+##### searchLocation
+```typescript
+static async searchLocation(query: string): Promise<NominatimResult | null>
+```
+**Purpose**: Search for a location by name
+**Parameters**: Location search string
+**Returns**: Nominatim result object or null
+
+##### parseBoundingBox
+```typescript
+static parseBoundingBox(boundingbox: [string, string, string, string]): BoundingBox
+```
+**Purpose**: Convert Nominatim bounding box to typed object
+**Parameters**: Array of [minLat, maxLat, minLon, maxLon] as strings
+**Returns**: BoundingBox object
+
+##### getAreaPolygon
+```typescript
+static async getAreaPolygon(query: string): Promise<any>
+```
+**Purpose**: Get polygon geometry for administrative boundaries
+**Parameters**: Location name
+**Returns**: GeoJSON coordinates array or null
+
+#### AOI Store API
+**File**: `src/store/aoiStore.ts`
+
+##### Key Methods
+- `addAOI(feature)` - Add new AOI from drawn polygon
+- `removeAOI(aoiId)` - Remove AOI by ID
+- `updateAOI(aoiId, updates)` - Update AOI properties
+- `selectAOI(aoiId)` - Select/deselect AOI for visibility
+- `setMapView(view)` - Toggle between satellite and street map
+- `confirmAOIs()` - Lock AOIs and disable editing
+
+### Data Schemas
+
+#### AOI Object
+```typescript
+interface AOI {
+  id: string;           // Unique identifier (UUID)
+  name: string;         // Display name (e.g., "AOI 1")
+  featureId: string;    // OpenLayers feature ID
+  createdAt: string;    // ISO timestamp
+}
+```
+
+#### BoundingBox Object
+```typescript
+interface BoundingBox {
+  minLon: number;       // Western boundary
+  minLat: number;       // Southern boundary  
+  maxLon: number;       // Eastern boundary
+  maxLat: number;       // Northern boundary
+}
+```
+
+### Future Backend API Design
+
+#### Planned REST Endpoints
+**Base URL**: `https://api.aoi-app.com/v1`
+
+##### AOI Management
+```
+GET    /aois              # List user's AOIs
+POST   /aois              # Create new AOI
+GET    /aois/{id}         # Get AOI details
+PUT    /aois/{id}         # Update AOI
+DELETE /aois/{id}         # Delete AOI
+```
+
+##### Example Response
+**GET /aois**
+```json
+{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "AOI 1",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[6.7, 51.2], [6.8, 51.2], [6.8, 51.3], [6.7, 51.3], [6.7, 51.2]]]
+      },
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "total": 1
+}
+```
